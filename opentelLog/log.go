@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime"
-	
-	"github.com/dennesshen/photon-opentelemetry-starter/opentelCore"
-	
+
+	"github.com/Phofuture/photon-opentelemetry-starter/opentelCore"
+
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 )
@@ -28,7 +28,7 @@ func (l *OpentelLogger) log(ctx context.Context, level string, callerSkip int, m
 	if !l.handler.Enabled(ctx, l.logLevel) {
 		return
 	}
-	
+
 	_, span := opentelCore.NewTrace(ctx, "log")
 	defer span.End()
 	span.SetAttributes(attribute.String("log.type", level))
@@ -36,13 +36,13 @@ func (l *OpentelLogger) log(ctx context.Context, level string, callerSkip int, m
 	for i := 0; i < len(args)-1; i = i + 2 {
 		span.SetAttributes(attribute.String(fmt.Sprintf("log.params.%s", args[i]), fmt.Sprintf("%+v", args[i+1])))
 	}
-	
+
 	_, file, line, ok := runtime.Caller(callerSkip)
 	if ok {
 		span.SetAttributes(attribute.String("caller.file", file))
 		span.SetAttributes(attribute.Int("caller.line", line))
 	}
-	
+
 	if level == "ERROR" {
 		stake := ""
 		for i := 0; i < 10; i++ {

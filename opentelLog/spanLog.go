@@ -2,9 +2,9 @@ package opentelLog
 
 import (
 	"context"
-	
-	"github.com/dennesshen/photon-opentelemetry-starter/opentelCore"
-	
+
+	"github.com/Phofuture/photon-opentelemetry-starter/opentelCore"
+
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )

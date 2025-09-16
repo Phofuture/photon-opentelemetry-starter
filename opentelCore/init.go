@@ -5,9 +5,9 @@ import (
 	"log/slog"
 	"strings"
 	"time"
-	
-	"github.com/dennesshen/photon-core-starter/configuration"
-	
+
+	"github.com/Phofuture/photon-core-starter/configuration"
+
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
@@ -23,23 +23,23 @@ import (
 // 初始化 opentelmetery
 func Start(startContext context.Context) (err error) {
 	slog.Info("init otel")
-	
+
 	// TODO 那個defer cancel()是幹嘛的 ?
 	ctx, cancel := context.WithTimeout(startContext, time.Second*5)
 	defer cancel()
-	
+
 	// log 設定
 	config, err := configuration.Get[Config](ctx)
 	if err != nil {
 		return
 	}
-	
+
 	// 初始化 trace exporter
 	initTraceExporter(ctx, &config)
-	
+
 	// 啟動 metric service
 	startMetricService(&config)
-	
+
 	return
 }
 
@@ -65,7 +65,7 @@ func initTraceExporter(ctx context.Context, config *Config) {
 		)),
 	)
 	otel.SetTracerProvider(tp)
-	
+
 	otel.SetTextMapPropagator(propagation.TraceContext{})
 }
 
@@ -75,6 +75,6 @@ func connectGrpc(ctx context.Context, host string) (*otlptrace.Exporter, error) 
 	if err != nil {
 		slog.Error("[otel]dial to otel grpc server failed", "error", err, "host", host)
 	}
-	
+
 	return otlptracegrpc.New(ctx, otlptracegrpc.WithGRPCConn(conn))
 }

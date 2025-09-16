@@ -1,10 +1,10 @@
 package opentelStarter
 
 import (
-	"github.com/dennesshen/photon-core-starter/core"
-	"github.com/dennesshen/photon-core-starter/log"
-	"github.com/dennesshen/photon-opentelemetry-starter/opentelCore"
-	"github.com/dennesshen/photon-opentelemetry-starter/opentelLog"
+	"github.com/Phofuture/photon-core-starter/core"
+	"github.com/Phofuture/photon-core-starter/log"
+	"github.com/Phofuture/photon-opentelemetry-starter/opentelCore"
+	"github.com/Phofuture/photon-opentelemetry-starter/opentelLog"
 )
 
 func init() {

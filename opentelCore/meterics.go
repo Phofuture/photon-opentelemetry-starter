@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"sync"
 	"time"
-	
-	"github.com/dennesshen/photon-core-starter/utils/convert"
-	
+
+	"github.com/Phofuture/photon-core-starter/utils/convert"
+
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	runtimeMetrics "go.opentelemetry.io/contrib/instrumentation/runtime"
 	"go.opentelemetry.io/otel/attribute"
@@ -65,9 +65,9 @@ func configureMetrics() *prometheus.Exporter {
 	if err != nil {
 		slog.Error("set metric service error", "error", err)
 	}
-	
+
 	provider = metric.NewMeterProvider(metric.WithReader(exporter))
-	
+
 	return exporter
 }
 
