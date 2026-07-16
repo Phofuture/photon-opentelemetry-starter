@@ -3,16 +3,15 @@ package opentelCore
 import (
 	"context"
 	"log/slog"
-	"net/http"
 	"sync"
-	"time"
 
 	"github.com/Phofuture/photon-core-starter/utils/convert"
 
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	runtimeMetrics "go.opentelemetry.io/contrib/instrumentation/runtime"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/exporters/prometheus"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	metr "go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/sdk/metric"
 )
@@ -31,50 +30,60 @@ type Int64Guage struct {
 
 var (
 	provider       *metric.MeterProvider
-	exporter       *prometheus.Exporter
 	upDownCounters = make(map[string]Int64UpDownCounter)
 	upCounters     = make(map[string]Int64UpCounter)
 	upDownMutex    sync.Mutex
 	upMutex        sync.Mutex
 )
 
-func startMetricService(config *Config) {
-	if config.OpenTel.MetricPath == nil && config.OpenTel.MetricPort == nil {
+// startMetricService 以 OTLP push 啟動 metric（PeriodicReader → 共用 collector）。
+// v2.0.0 起移除 Prometheus 拉取式；metricPort / metricPath 已作廢，僅印 deprecation warning。
+func startMetricService(ctx context.Context, config *Config) {
+	if config.OpenTel.MetricPort != nil || config.OpenTel.MetricPath != nil {
+		slog.Warn("[otel]openTel.metricPort / openTel.metricPath 已於 v2.0.0 作廢（Prometheus 拉取式移除），" +
+			"metric 改走 OTLP push，這兩個設定不再有作用，請從 config 移除")
+	}
+
+	slog.Info("[otel]start metric service (OTLP push)")
+
+	reader, err := newMetricReader(ctx)
+	if err != nil {
+		slog.Error("[otel]create metric exporter failed, metric disabled", "error", err)
 		return
 	}
-	slog.Info("[otel]start metric service")
+
+	provider = metric.NewMeterProvider(
+		metric.WithReader(reader),
+		metric.WithResource(sharedRes),
+	)
+	otel.SetMeterProvider(provider)
+
 	if err := runtimeMetrics.Start(); err != nil {
-		slog.Error("[otel]start otel metric service error", "error", err)
+		slog.Error("[otel]start runtime metric error", "error", err)
 	}
-	exporter = configureMetrics()
-	http.Handle(*config.OpenTel.MetricPath, promhttp.Handler())
-	slog.Info("[otel]metric listening", "port", *config.OpenTel.MetricPort, "path", *config.OpenTel.MetricPath)
-	go func() {
-		server := &http.Server{
-			Addr:              ":" + *config.OpenTel.MetricPort,
-			ReadHeaderTimeout: 3 * time.Second,
-		}
-		if err := server.ListenAndServe(); err != nil {
-			slog.Error("[otel]start otel metric http service error", "error", err)
-		}
-	}()
 }
 
-func configureMetrics() *prometheus.Exporter {
-	exporter, err := prometheus.New()
-	if err != nil {
-		slog.Error("set metric service error", "error", err)
+func newMetricReader(ctx context.Context) (metric.Reader, error) {
+	var exp metric.Exporter
+	var err error
+	if collectorUseGRPC {
+		exp, err = otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithGRPCConn(collectorConn))
+	} else {
+		exp, err = otlpmetrichttp.New(ctx, otlpmetrichttp.WithEndpointURL(collectorEndpoint))
 	}
-
-	provider = metric.NewMeterProvider(metric.WithReader(exporter))
-
-	return exporter
+	if err != nil {
+		return nil, err
+	}
+	return metric.NewPeriodicReader(exp), nil
 }
 
 /*
 Add meter up/down count
 */
 func AddMeterUpDownCount(action, description, unit string, value int64, attributes ...attribute.KeyValue) {
+	if provider == nil {
+		return
+	}
 	upDownMutex.Lock()
 	defer upDownMutex.Unlock()
 	counter, ok := upDownCounters[action]
@@ -100,6 +109,9 @@ func (c *Int64UpDownCounter) addMeterUpDownCount(ctx context.Context, value int6
 }
 
 func AddMeterCount(action, description, unit string, value uint64, attributes ...attribute.KeyValue) {
+	if provider == nil {
+		return
+	}
 	upMutex.Lock()
 	defer upMutex.Unlock()
 	counter, ok := upCounters[action]
