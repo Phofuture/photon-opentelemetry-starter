@@ -12,8 +12,8 @@ type Config struct {
 		// Trace 取樣率（0.0~1.0，未設 / <=0 時預設全採；階段 3 生效）
 		SampleRatio *float64 `yaml:"sampleRatio"`
 
-		// Deprecated：Prometheus 拉取式已於 v2.0.0 移除，改走 OTLP push。
-		// 欄位保留僅為相容舊 yaml，不再有任何作用；若有設值啟動會印 deprecation warning。
+		// Prometheus 拉取式（SRE 監控用，與 OTLP push 並存）：
+		// 有設 metricPort 才啟動 /metrics HTTP server；metricPath 未設時預設 /metrics。
 		MetricPort *string `yaml:"metricPort"`
 		MetricPath *string `yaml:"metricPath"`
 	} `yaml:"openTel"`

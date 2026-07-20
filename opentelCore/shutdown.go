@@ -14,6 +14,12 @@ func Shutdown(ctx context.Context) error {
 			slog.Error("[otel]shutdown trace provider error", "error", err)
 		}
 	}
+	// 關閉 Prometheus 拉取端點（先停止對外曝露，再 flush provider）
+	if metricServer != nil {
+		if err := metricServer.Shutdown(ctx); err != nil {
+			slog.Error("[otel]shutdown prometheus metric server error", "error", err)
+		}
+	}
 	// flush metric（OTLP push 需 flush 尾端 metric）
 	if provider != nil {
 		if err := provider.Shutdown(ctx); err != nil {

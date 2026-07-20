@@ -1,7 +1,9 @@
 # photon-opentelemetry-starter 優化 TODO
 
 > 最後更新：2026-07-16
-> 對象版本：`v1.0.1`(main）→ 目標 `v2.0.0`（breaking）
+> 對象版本：`v1.0.1`(main）→ ~~目標 `v2.0.0`（breaking）~~ → 定版 `v1.1.1`
+> （2026-07-20：Prometheus 拉取式恢復並存後不再走 v2 major bump；
+> 　module path 無 `/v2` 後綴，v2.0.0 tag 對 Go 工具鏈本為無效版本，僅存在本地、未推上 origin，已刪除）
 >
 > 起因：slot-game UAT 查找中發現「app 的 metric / log 在 SigNoz 上看不到，只有 trace 進得去」，
 > 追到根因都在本 starter。
@@ -10,12 +12,16 @@
 
 ---
 
-## 已鎖定決策（2026-07-16）
+## 已鎖定決策（2026-07-16，2026-07-20 修訂第 2、3 點）
 
 1. **全面 OTLP push**：trace / metric / log 三個 signal 全走同一個 collector（OTLP grpc），starter 不再依賴外部 scrape。
-2. **Prometheus 拉取式：全砍**。`prometheus.New()` + `/metrics` HTTP server 整段移除。
-3. **config 相容：新增欄位、舊欄位保留**。`openTel.url` 沿用；`metricPort` / `metricPath` **保留在 struct**（下游 yaml 不報錯）但**作廢為 no-op**，啟動印 deprecation warning。
-4. **這是 breaking change**：bump `v2.0.0`、通知所有下游（slot-game 等靠 blank import `_ ".../photon-opentelemetry-starter"` 自動註冊）。
+2. ~~**Prometheus 拉取式：全砍**~~ → **改為與 OTLP push 雙軌並存**（2026-07-20，SRE 要求保留 scrape 監控）。
+   同一個 MeterProvider 掛雙 reader：PeriodicReader（OTLP push → SigNoz）+ prometheus exporter（`/metrics` 拉取）。
+   有設 `metricPort` 才開端點，語意同 v1.x；metric 名稱 / exposition 格式與 v1.x 相同，SRE 既有 dashboard 不受影響。
+3. **config 相容**：`openTel.url` 沿用；`metricPort` / `metricPath` ~~作廢為 no-op~~ → **恢復有效**（見第 2 點）。
+4. ~~**這是 breaking change**：bump `v2.0.0`~~ → **定版 `v1.1.1`**（2026-07-20：Prometheus 拉取式恢復、
+   config 欄位語意不變後，對下游唯一的行為變化是 log-span → OTLP logs）。
+   仍需通知所有下游（slot-game 等靠 blank import `_ ".../photon-opentelemetry-starter"` 自動註冊）。
 
 ---
 

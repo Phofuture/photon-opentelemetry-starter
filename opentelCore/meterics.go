@@ -2,16 +2,21 @@ package opentelCore
 
 import (
 	"context"
+	"errors"
 	"log/slog"
+	"net/http"
 	"sync"
+	"time"
 
 	"github.com/Phofuture/photon-core-starter/utils/convert"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	runtimeMetrics "go.opentelemetry.io/contrib/instrumentation/runtime"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
+	promexporter "go.opentelemetry.io/otel/exporters/prometheus"
 	metr "go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/sdk/metric"
 )
@@ -30,37 +35,80 @@ type Int64Guage struct {
 
 var (
 	provider       *metric.MeterProvider
+	metricServer   *http.Server
 	upDownCounters = make(map[string]Int64UpDownCounter)
 	upCounters     = make(map[string]Int64UpCounter)
 	upDownMutex    sync.Mutex
 	upMutex        sync.Mutex
 )
 
-// startMetricService 以 OTLP push 啟動 metric（PeriodicReader → 共用 collector）。
-// v2.0.0 起移除 Prometheus 拉取式；metricPort / metricPath 已作廢，僅印 deprecation warning。
+// startMetricService 啟動 metric，雙軌並存：
+//   - OTLP push（PeriodicReader → 共用 collector，給 SigNoz）
+//   - Prometheus 拉取式（SRE 監控用）：有設 metricPort 才啟動 /metrics HTTP server，
+//     metricPath 未設時預設 /metrics
+//
+// 兩個 reader 掛在同一個 MeterProvider 上，資料一致。任一軌初始化失敗只停用該軌，不影響另一軌。
 func startMetricService(ctx context.Context, config *Config) {
-	if config.OpenTel.MetricPort != nil || config.OpenTel.MetricPath != nil {
-		slog.Warn("[otel]openTel.metricPort / openTel.metricPath 已於 v2.0.0 作廢（Prometheus 拉取式移除），" +
-			"metric 改走 OTLP push，這兩個設定不再有作用，請從 config 移除")
+	var readers []metric.Option
+	otlpEnabled := false
+
+	// OTLP push reader
+	if reader, err := newMetricReader(ctx); err != nil {
+		slog.Error("[otel]create otlp metric exporter failed, otlp metric disabled", "error", err)
+	} else {
+		readers = append(readers, metric.WithReader(reader))
+		otlpEnabled = true
 	}
 
-	slog.Info("[otel]start metric service (OTLP push)")
+	// Prometheus 拉取式 reader
+	if config.OpenTel.MetricPort != nil {
+		if promReader, err := promexporter.New(); err != nil {
+			slog.Error("[otel]create prometheus exporter failed, prometheus metric disabled", "error", err)
+		} else {
+			readers = append(readers, metric.WithReader(promReader))
+			startPrometheusServer(config)
+		}
+	}
 
-	reader, err := newMetricReader(ctx)
-	if err != nil {
-		slog.Error("[otel]create metric exporter failed, metric disabled", "error", err)
+	if len(readers) == 0 {
+		slog.Error("[otel]no metric reader available, metric disabled")
 		return
 	}
 
+	slog.Info("[otel]start metric service", "otlpPush", otlpEnabled, "prometheusPull", metricServer != nil)
+
 	provider = metric.NewMeterProvider(
-		metric.WithReader(reader),
-		metric.WithResource(sharedRes),
+		append(readers, metric.WithResource(sharedRes))...,
 	)
 	otel.SetMeterProvider(provider)
 
 	if err := runtimeMetrics.Start(); err != nil {
 		slog.Error("[otel]start runtime metric error", "error", err)
 	}
+}
+
+// startPrometheusServer 啟動 Prometheus 拉取端點（與 v1.x 相同走 default registry，
+// 保留 go_* / process_* 等既有 exposition，SRE 舊 dashboard 不受影響）。
+func startPrometheusServer(config *Config) {
+	path := "/metrics"
+	if config.OpenTel.MetricPath != nil {
+		path = *config.OpenTel.MetricPath
+	}
+
+	mux := http.NewServeMux()
+	mux.Handle(path, promhttp.Handler())
+	metricServer = &http.Server{
+		Addr:              ":" + *config.OpenTel.MetricPort,
+		Handler:           mux,
+		ReadHeaderTimeout: 3 * time.Second,
+	}
+
+	slog.Info("[otel]prometheus metric listening", "port", *config.OpenTel.MetricPort, "path", path)
+	go func() {
+		if err := metricServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			slog.Error("[otel]start prometheus metric http service error", "error", err)
+		}
+	}()
 }
 
 func newMetricReader(ctx context.Context) (metric.Reader, error) {
