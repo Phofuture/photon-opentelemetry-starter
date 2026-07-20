@@ -10,13 +10,13 @@ import _ "github.com/Phofuture/photon-opentelemetry-starter"
 
 ```yaml
 openTel:
-  url: grpc://otel-collector:4317   # 必填。grpc:// → 三 signal 共用一條 grpc conn；否則走 http endpoint
-  serviceName: my-service           # 必填
-  environment: uat                  # 選填 → resource.deployment.environment（dev / uat / prod）
-  serviceVersion: 1.2.3             # 選填 → resource.service.version（建議帶 git commit / 版號）
-  sampleRatio: 0.1                  # 選填 → trace 取樣率 0.0~1.0；未設維持全採
-  metricPort: "9090"                # 選填 → 有設才啟動 Prometheus /metrics 拉取端點（SRE 監控用）
-  metricPath: /metrics              # 選填 → 拉取路徑，未設預設 /metrics
+  url: grpc://otel-collector:4317 # 必填。grpc:// → 三 signal 共用一條 grpc conn；否則走 http endpoint
+  serviceName: my-service # 必填
+  environment: uat # 選填 → resource.deployment.environment（dev / uat / prod）
+  serviceVersion: 1.2.3 # 選填 → resource.service.version（建議帶 git commit / 版號）
+  sampleRatio: 0.1 # 選填 → trace 取樣率 0.0~1.0；未設維持全採
+  metricPort: "9090" # 選填 → 有設才啟動 Prometheus /metrics 拉取端點（SRE 監控用）
+  metricPath: /metrics # 選填 → 拉取路徑，未設預設 /metrics
 log:
   level: info
 ```
@@ -44,7 +44,3 @@ log:
 - **Metric 新增 OTLP push，Prometheus 拉取式保留**：`openTel.metricPort` / `metricPath`
   語意不變（有設 `metricPort` 才開 `/metrics`），未設定則只走 OTLP push。
 - 下游靠 blank import 自動註冊，升級只需 bump 版本。
-
-## Roadmap / 優化項
-
-見 [docs/optimization-todo.md](docs/optimization-todo.md) —— trace/metric/log 三訊號的已知問題與優化 checklist。
