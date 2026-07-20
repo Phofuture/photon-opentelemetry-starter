@@ -2,14 +2,9 @@ package opentelLog
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"runtime"
-
-	"github.com/Phofuture/photon-opentelemetry-starter/opentelCore"
-
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
+	"time"
 )
 
 type OpentelLogger struct {
@@ -24,58 +19,39 @@ func NewOpentelLogger(logLevel slog.Level) *OpentelLogger {
 	}
 }
 
-func (l *OpentelLogger) log(ctx context.Context, level string, callerSkip int, msg string, args ...any) {
-	if !l.handler.Enabled(ctx, l.logLevel) {
+// log 把一筆 log 送 OTLP（透過 handler → LoggerProvider），並保留 stdout（slog.Default）。
+// 不再每筆 log 開一個 span，也不再把訊息塞 span 屬性。
+func (l *OpentelLogger) log(ctx context.Context, level slog.Level, callerSkip int, msg string, args ...any) {
+	if !l.handler.Enabled(ctx, level) {
 		return
 	}
 
-	_, span := opentelCore.NewTrace(ctx, "log")
-	defer span.End()
-	span.SetAttributes(attribute.String("log.type", level))
-	span.SetAttributes(attribute.String("log.message", msg))
-	for i := 0; i < len(args)-1; i = i + 2 {
-		span.SetAttributes(attribute.String(fmt.Sprintf("log.params.%s", args[i]), fmt.Sprintf("%+v", args[i+1])))
-	}
+	var pcs [1]uintptr
+	// +2：跳過 runtime.Callers 自己與本 frame，讓 caller 指向呼叫端。
+	runtime.Callers(callerSkip+2, pcs[:])
 
-	_, file, line, ok := runtime.Caller(callerSkip)
-	if ok {
-		span.SetAttributes(attribute.String("caller.file", file))
-		span.SetAttributes(attribute.Int("caller.line", line))
-	}
+	record := slog.NewRecord(time.Now(), level, msg, pcs[0])
+	record.Add(args...)
+	_ = l.handler.Handle(ctx, record)
 
-	if level == "ERROR" {
-		stake := ""
-		for i := 0; i < 10; i++ {
-			_, file, line, ok := runtime.Caller(callerSkip + i)
-			if ok {
-				stake = stake + fmt.Sprintf("%s:%d\n", file, line)
-			} else {
-				break
-			}
-		}
-		span.SetAttributes(attribute.String("caller.stake", stake[:len(stake)-1]))
-		span.SetStatus(codes.Error, msg)
-	}
+	// 保留 stdout（k8s pod log / 本機除錯）
+	slog.Default().Log(ctx, level, msg, args...)
 }
 
 func (l *OpentelLogger) Info(ctx context.Context, msg string, args ...any) {
-	l.log(ctx, "INFO", 2, msg, args...)
-	slog.Info(msg, args...)
+	l.log(ctx, slog.LevelInfo, 2, msg, args...)
 }
 
 func (l *OpentelLogger) Error(ctx context.Context, msg string, args ...any) {
-	l.log(ctx, "ERROR", 2, msg, args...)
-	slog.Error(msg, args...)
+	l.log(ctx, slog.LevelError, 2, msg, args...)
 }
 
 func (l *OpentelLogger) Debug(ctx context.Context, msg string, args ...any) {
-	l.log(ctx, "DEBUG", 2, msg, args...)
-	slog.Debug(msg, args...)
+	l.log(ctx, slog.LevelDebug, 2, msg, args...)
 }
 
 func (l *OpentelLogger) Warn(ctx context.Context, msg string, args ...any) {
-	l.log(ctx, "WARN", 2, msg, args...)
-	slog.Warn(msg, args...)
+	l.log(ctx, slog.LevelWarn, 2, msg, args...)
 }
 
 func (l *OpentelLogger) DebugContext(msg string, args ...any) {

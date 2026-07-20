@@ -8,16 +8,32 @@ import (
 func Shutdown(ctx context.Context) error {
 	slog.Info("[otel]shutdown otel")
 
-	if exporter != nil {
-		if err := exporter.Shutdown(ctx); err != nil {
-			slog.Error("[otel]shutdown metric exporter error", "error", err)
+	// flush trace
+	if tp != nil {
+		if err := tp.Shutdown(ctx); err != nil {
+			slog.Error("[otel]shutdown trace provider error", "error", err)
 		}
 	}
-	if tp == nil {
-		return nil
+	// 關閉 Prometheus 拉取端點（先停止對外曝露，再 flush provider）
+	if metricServer != nil {
+		if err := metricServer.Shutdown(ctx); err != nil {
+			slog.Error("[otel]shutdown prometheus metric server error", "error", err)
+		}
 	}
-	if err := tp.Shutdown(ctx); err != nil {
-		slog.Error("[otel]shutdown trace provider error", "error", err)
+	// flush metric（OTLP push 需 flush 尾端 metric）
+	if provider != nil {
+		if err := provider.Shutdown(ctx); err != nil {
+			slog.Error("[otel]shutdown meter provider error", "error", err)
+		}
+	}
+	// flush log
+	shutdownLoggerProvider(ctx)
+
+	// 關閉共用 collector 連線
+	if collectorConn != nil {
+		if err := collectorConn.Close(); err != nil {
+			slog.Error("[otel]close collector conn error", "error", err)
+		}
 	}
 	return nil
 }
