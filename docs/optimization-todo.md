@@ -29,8 +29,9 @@
 
 ```
                      ┌─ TracerProvider  (BatchSpanProcessor  → otlptracegrpc)
- collector conn ─────┼─ MeterProvider   (PeriodicReader      → otlpmetricgrpc)
- (grpc://…, 共用)     └─ LoggerProvider  (BatchLogProcessor   → otlploggrpc)
+ collector conn ─────┼─ MeterProvider   (PeriodicReader      → otlpmetricgrpc)  ─┐ 同 provider 雙 reader
+ (grpc://…, 共用)     │                  (prometheus exporter → /metrics 拉取)   ─┘ (2026-07-20 修訂)
+                     └─ LoggerProvider  (BatchLogProcessor   → otlploggrpc)
    + 共用 Resource(service.name / service.version / deployment.environment / service.instance.id)
 ```
 
@@ -50,6 +51,9 @@
 - **驗收**：三個 provider 都拿到同一 conn 與同一 resource；SigNoz 上 trace 帶 env + version。
 
 ### ☑ 階段 1　Metric 改 OTLP push（原 P2-7 + P2-8 + P0-4）
+
+> ⚠️ 本段「砍 Prometheus / metricPort 作廢」為 2026-07-16 原始計畫，
+> 已於 2026-07-20 修訂為雙軌並存（見頂部決策 2、3），`metricPort` / `metricPath` 恢復有效。
 
 - **位置**：`opentelCore/meterics.go` `configureMetrics()`、`startMetricService()`；`shutdown.go`。
 - **影響（現況）**：
