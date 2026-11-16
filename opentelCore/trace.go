@@ -18,6 +18,11 @@ func NewServerTrace(ctx context.Context, traceName string) (context.Context, tra
 	return tracer.Start(ctx, traceName, trace.WithSpanKind(trace.SpanKindServer))
 }
 
+func NewClientTrace(ctx context.Context, traceName string) (context.Context, trace.Span) {
+	tracer := otel.Tracer(serviceName)
+	return tracer.Start(ctx, traceName, trace.WithSpanKind(trace.SpanKindClient))
+}
+
 func NewTraceFromHTTP(r *http.Request, traceName string) (*http.Request, trace.Span) {
 	ctx, span := NewTrace(r.Context(), traceName)
 	return r.WithContext(ctx), span
